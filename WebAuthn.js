@@ -7,6 +7,11 @@ function TfaWebAuthn_addkey() {
     var json = JSON.parse(createDataRaw);
     
     recursiveBase64StrToArrayBuffer(json);
+
+    if (!window.fetch || !navigator.credentials || !navigator.credentials.create) {
+        window.alert('Browser does not support WebAuthn.');
+        return;
+    }
     
     navigator.credentials.create(json).then(function(f) {
         console.log(f);
