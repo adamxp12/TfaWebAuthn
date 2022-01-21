@@ -1,0 +1,231 @@
+<?php
+namespace ProcessWire;
+
+/**
+ * TfaWebAuthn (1.0.0)
+ * Adds WebAuthn/FIDO2 as a TFA option
+ *
+ * @author Adam Blunt
+ *
+ * ProcessWire 3.x
+ * Copyright (C) 2011 by Ryan Cramer
+ * Licensed under GNU/GPL v2, see LICENSE.TXT
+ *
+ * http://www.processwire.com
+ * http://www.ryancramer.com
+ *
+ */
+require_once 'WebAuthn/WebAuthn.php';
+//use lbuchs\WebAuthn\Binary\ByteBuffer;
+class TfaWebAuthn extends Tfa implements Module, ConfigurableModule
+{
+    public function __construct()
+    {
+        parent::__construct();
+        $this->WebAuthn = new \lbuchs\WebAuthn\WebAuthn('WebAuthn Library',  $this->wire('config')->httpHost); // $formats
+        $this->userVerification = "discouraged";
+        $this->crossPlatformAttachment = null;  // True only crossplatfrm aka USB keys, False only single device like TPM/Winows Hellow, Null allow both
+        $this->typeUsb = true;
+        $this->typeNfc = true;
+        $this->typeBle = true;
+        $this->typeInt = true;
+    }
+
+    public function init()
+    {
+        if(config()->version('3.0.165')) {
+            // 3.0.165 and newer have an init() function in the Tfa class. previous versions did not
+            // Strangely this init() function while not needed before is now required in new versions even if you dont use the auto-enable feature
+            parent::init();
+        }
+        $this->addHookBefore('Tfa::getUserSettingsInputfields', $this, 'addScripts');
+        $this->addHookBefore('Tfa::render', $this, 'addScripts');
+    }
+    
+
+    public function addScripts()
+    {
+        $this->config->scripts->add($this->wire('config')->urls->$this . "WebAuthn.js");
+    }
+    
+    public function enabledForUser(User $user, array $settings)
+    {
+        return $settings['enabled'] === true;
+    }
+    
+
+    public function isValidUserCode(User $user, $code, array $settings)
+    {
+        if (!strlen($code)) {
+            return false;
+        }
+
+        $authreg = $this->session->authreg;
+        $authreq = $this->session->authreq;
+        $this->session->authreq = null;
+        $this->session->authreg = null;
+
+        $code = json_decode($code);
+
+
+        $clientDataJSON = base64_decode($code->clientDataJSON);
+        $authenticatorData = base64_decode($code->authenticatorData);
+        $signature = base64_decode($code->signature);
+        $userHandle = base64_decode($code->userHandle);
+        $id = base64_decode($code->id);
+        $challenge = $this->session->authchallange;
+        $credentialPublicKey = null;
+        // Get the public key for the given credential 
+        if (is_array($authreg)) {
+            foreach ($authreg as $reg) {
+                $o = (object) $reg;
+                if ($o->credentialId === bin2hex($id)) {
+                    $credentialPublicKey = $o->credentialPublicKey;
+                    break;
+                }
+            }
+        }
+
+        try {
+            if ($credentialPublicKey === null) {
+                exit('Public Key for credential ID not found!');
+            }
+            // process the get request. throws WebAuthnException if it fails
+            $this->WebAuthn->processGet($clientDataJSON, $authenticatorData, $signature, $credentialPublicKey, $challenge, null, $this->userVerification === 'required');
+            return true;
+        } catch (Exception $e) {
+            return false;
+        }
+
+        return false;
+    }
+
+
+    // Create settings page for server
+    public function ___getUserSettingsInputfields(User $user, InputfieldWrapper $fieldset, $settings)
+    {
+        parent::___getUserSettingsInputfields($user, $fieldset, $settings);
+        
+        if ($this->enabledForUser($user, $settings)) {
+        } elseif ($this->wire('input')->requestMethod('POST')) {
+            $fieldset->new('text', 'regdata')
+                ->attr('maxlength', 20480);
+        } else {
+            $createArgs = $this->WebAuthn->getCreateArgs(\hex2bin($user->id), $user->name, $user->name, 20, false, $this->userVerification, $this->crossPlatformAttachment);
+            $fieldset->new('hidden', 'createData')
+                ->attr('id', 'TfaWebAuthn_createData')
+                ->attr('value', json_encode($createArgs));
+
+            $fieldset->new('hidden', 'regdata')
+                ->attr('id', 'TfaWebAuthn_regdata')
+                ->attr('maxlength', 20480);  
+
+            $fieldset->new('button', 'addKey', 'Enable two-factor authentication')
+                ->attr('id', 'TfaWebAuthn_button')
+                ->attr('onclick', "TfaWebAuthn_addkey()")
+                ->value("Add WebAuthn Credential");
+
+            $fieldset->new('markup')
+                ->attr('value', "<span id='TfaWebAuthn_msg'>Click the button to register a new credential.</span>");
+                $_SESSION["chal"] = (string) $this->WebAuthn->getChallenge();
+        }
+    }
+
+    // Save registration data from the User settings
+    public function ___processUserSettingsInputfields(User $user, InputfieldWrapper $fieldset, $settings, $settingsPrev)
+    {
+        $settings = parent::___processUserSettingsInputfields($user, $fieldset, $settings, $settingsPrev);
+        try {
+            $challenge = $_SESSION["chal"];
+            
+           
+
+            $aryreg = json_decode("[".$settings['regdata']."]");
+            $data = array();
+            foreach ($aryreg as $reg) {
+                
+                $clientdata = base64_decode($reg->clientDataJSON);
+                $attestationObject = base64_decode($reg->attestationObject);
+                $d = $this->WebAuthn->processCreate($clientdata, $attestationObject, $challenge, $this->userVerification === 'required', true, false);
+                array_push($data, (array) $d );
+            }
+            $sd = serialize($data);
+            $settings['regkeys'] =  $sd;
+            $settings['enabled'] = true;
+            $settings['challenge'] = null;
+            $settings['regdata'] = null;
+            $this->message("Success! Your account is now secured with two-factor authentication");
+        } catch (Exception $e) {
+            $settings['enabled'] = false;
+            $this->error("That did not work " . $e);
+        }
+
+        return $settings;
+    }
+
+
+    protected function getDefaultUserSettings(User $user)
+    {
+        return array(
+            'enabled' => false,
+            'regkeys' => ''
+        );
+    }
+
+    // Display the tFA form
+    public function buildAuthCodeForm()
+    {
+        $user = $this->getUser();
+        $settings = $this->getUserSettings($user);
+        
+        $authreg = unserialize($settings['regkeys']);
+        $ids = array();
+        $this->session->authreg = $authreg;
+
+ 
+        $ids = array();
+        if (is_array($authreg)) {
+            foreach ($authreg as $reg) {
+                $o = (object) $reg;
+                array_push($ids, $o->credentialId);
+            }
+        }
+        if (count($ids) === 0) {
+            throw new Exception('no WebAuthn registrations for userId ' . $user->id);
+        }
+
+        
+       /*
+         * Check if the authreq is null. if so make a new challenge
+         * ProcessWire annoingly calls builtAuthCodeForm twice. once to build the form and a 2nd time when the user submits the form
+         * thus validation was failing as the was non-matching challanges
+         */
+        if (is_null($this->session->authreq)) {
+            $req = $this->WebAuthn->getGetArgs($ids, 20, $this->typeUsb, $this->typeNfc, $this->typeBle, $this->typeInt, $this->userVerification);
+            $this->session->authreq = json_encode($req);
+            $this->session->authchallange = (string) $this->WebAuthn->getChallenge();
+        }
+        
+        
+        
+        $form = $this->modules->get('InputfieldForm');
+        $form->attr('action', "./?$this->keyName=" . $this->getSessionKey(true))
+             ->attr('id', "tfaform");
+        $form->new('markup')
+                ->attr('value', "<img style='height:80px' onload='TfaWebAuthn_authKey()' src='" . $this->wire('config')->urls->$this . "assets\bluekeyside.png'><br>
+                 You need to use your security key to login.<br>
+                 Insert it now and tap/click the key to verify its you. If your key does not have a button just unplug it and then plug it back in.<br>
+                 <div uk-alert class='uk-alert-danger' style='display:none' id='TfaWebAuthn_error'></div>");
+        $form->new('hidden', 'authreq')
+                ->attr('id', 'TfaWebAuthn_authreq')
+                ->attr('value', $this->session->authreq);
+        $form->new('hidden', 'tfa_code')
+                ->attr('id', 'TfaWebAuthn_authresponse')
+                ->attr('required', 'required');
+        $form->new('button', 'authKey', 'Start two-factor authentication')
+                ->attr('id', 'TfaWebAuthn_button')
+                ->attr('onclick', "TfaWebAuthn_authKey()")
+                ->value("Use Security Key");
+        return $form;
+    }
+}
