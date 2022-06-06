@@ -2,7 +2,7 @@
 namespace ProcessWire;
 
 /**
- * TfaWebAuthn (1.0.0)
+ * TfaWebAuthn (1.0.1)
  * Adds WebAuthn/FIDO2 as a TFA option
  *
  * @author Adam Blunt
@@ -40,7 +40,8 @@ class TfaWebAuthn extends Tfa implements Module, ConfigurableModule
         }
         $this->addHookBefore('Tfa::getUserSettingsInputfields', $this, 'addScripts');
         $this->addHookBefore('Tfa::render', $this, 'addScripts');
-
+        
+        //uses "legacy" option by design
         $this->config->js('tfa_webauthn', [
             'browser_not_supported' => $this->_("Browser does not support WebAuthn."),
             'credential_added' => $this->_("Credential added. You can add more now or save this page to finish setup"),
