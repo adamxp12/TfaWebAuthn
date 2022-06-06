@@ -136,25 +136,29 @@ class TfaWebAuthn extends Tfa implements Module, ConfigurableModule
     {
         $settings = parent::___processUserSettingsInputfields($user, $fieldset, $settings, $settingsPrev);
         try {
-            $challenge = $_SESSION["chal"];
-            
-           
-
+            $challenge = $_SESSION["chal"];           
             $aryreg = json_decode("[".$settings['regdata']."]");
-            $data = array();
-            foreach ($aryreg as $reg) {
-                
-                $clientdata = base64_decode($reg->clientDataJSON);
-                $attestationObject = base64_decode($reg->attestationObject);
-                $d = $this->WebAuthn->processCreate($clientdata, $attestationObject, $challenge, $this->userVerification === 'required', true, false);
-                array_push($data, (array) $d );
+
+            if(count($aryreg) > 0){
+                $data = array();
+                foreach ($aryreg as $reg) {
+                    
+                    $clientdata = base64_decode($reg->clientDataJSON);
+                    $attestationObject = base64_decode($reg->attestationObject);
+                    $d = $this->WebAuthn->processCreate($clientdata, $attestationObject, $challenge, $this->userVerification === 'required', true, false);
+                    array_push($data, (array) $d );
+                }
+                $sd = serialize($data);
+                $settings['regkeys'] =  $sd;
+                $settings['enabled'] = true;
+                $settings['challenge'] = null;
+                $settings['regdata'] = null;
+                $this->message("Success! Your account is now secured with two-factor authentication");
+            }else{
+                $settings['enabled'] = false;
+                $this->message("Something went wrong! No credentials submitted!");
             }
-            $sd = serialize($data);
-            $settings['regkeys'] =  $sd;
-            $settings['enabled'] = true;
-            $settings['challenge'] = null;
-            $settings['regdata'] = null;
-            $this->message("Success! Your account is now secured with two-factor authentication");
+            
         } catch (Exception $e) {
             $settings['enabled'] = false;
             $this->error("That did not work " . $e);
