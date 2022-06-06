@@ -61,12 +61,9 @@ class TfaWebAuthn extends Tfa implements Module, ConfigurableModule
         }
 
         $authreg = $this->session->authreg;
-        $authreq = $this->session->authreq;
         $this->session->authreq = null;
-        $this->session->authreg = null;
 
         $code = json_decode($code);
-
 
         $clientDataJSON = base64_decode($code->clientDataJSON);
         $authenticatorData = base64_decode($code->authenticatorData);
@@ -185,7 +182,6 @@ class TfaWebAuthn extends Tfa implements Module, ConfigurableModule
         $authreg = unserialize($settings['regkeys']);
         $ids = array();
         $this->session->authreg = $authreg;
-
  
         $ids = array();
         if (is_array($authreg)) {
@@ -198,7 +194,6 @@ class TfaWebAuthn extends Tfa implements Module, ConfigurableModule
             throw new \Exception('No WebAuthn registrations for userId ' . $user->id);
         }
 
-        
        /*
          * Check if the authreq is null. if so make a new challenge
          * ProcessWire annoingly calls builtAuthCodeForm twice. once to build the form and a 2nd time when the user submits the form
@@ -209,8 +204,6 @@ class TfaWebAuthn extends Tfa implements Module, ConfigurableModule
             $this->session->authreq = json_encode($req);
             $this->session->authchallange = (string) $this->WebAuthn->getChallenge();
         }
-        
-        
         
         $form = $this->modules->get('InputfieldForm');
         $form->attr('action', "./?$this->keyName=" . $this->getSessionKey(true))
