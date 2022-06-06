@@ -61,12 +61,10 @@ class TfaWebAuthn extends Tfa implements Module, ConfigurableModule
         }
 
         $authreg = $this->session->authreg;
-        $authreq = $this->session->authreq;
         $this->session->authreq = null;
         $this->session->authreg = null;
 
         $code = json_decode($code);
-
 
         $clientDataJSON = base64_decode($code->clientDataJSON);
         $authenticatorData = base64_decode($code->authenticatorData);
@@ -93,7 +91,7 @@ class TfaWebAuthn extends Tfa implements Module, ConfigurableModule
             // process the get request. throws WebAuthnException if it fails
             $this->WebAuthn->processGet($clientDataJSON, $authenticatorData, $signature, $credentialPublicKey, $challenge, null, $this->userVerification === 'required');
             return true;
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return false;
         }
 
@@ -136,26 +134,30 @@ class TfaWebAuthn extends Tfa implements Module, ConfigurableModule
     {
         $settings = parent::___processUserSettingsInputfields($user, $fieldset, $settings, $settingsPrev);
         try {
-            $challenge = $_SESSION["chal"];
-            
-           
-
+            $challenge = $_SESSION["chal"];           
             $aryreg = json_decode("[".$settings['regdata']."]");
-            $data = array();
-            foreach ($aryreg as $reg) {
-                
-                $clientdata = base64_decode($reg->clientDataJSON);
-                $attestationObject = base64_decode($reg->attestationObject);
-                $d = $this->WebAuthn->processCreate($clientdata, $attestationObject, $challenge, $this->userVerification === 'required', true, false);
-                array_push($data, (array) $d );
+
+            if(count($aryreg) > 0){
+                $data = array();
+                foreach ($aryreg as $reg) {
+                    
+                    $clientdata = base64_decode($reg->clientDataJSON);
+                    $attestationObject = base64_decode($reg->attestationObject);
+                    $d = $this->WebAuthn->processCreate($clientdata, $attestationObject, $challenge, $this->userVerification === 'required', true, false);
+                    array_push($data, (array) $d );
+                }
+                $sd = serialize($data);
+                $settings['regkeys'] =  $sd;
+                $settings['enabled'] = true;
+                $settings['challenge'] = null;
+                $settings['regdata'] = null;
+                $this->message("Success! Your account is now secured with two-factor authentication");
+            }else{
+                $settings['enabled'] = false;
+                $this->message("Something went wrong! No credentials submitted!");
             }
-            $sd = serialize($data);
-            $settings['regkeys'] =  $sd;
-            $settings['enabled'] = true;
-            $settings['challenge'] = null;
-            $settings['regdata'] = null;
-            $this->message("Success! Your account is now secured with two-factor authentication");
-        } catch (Exception $e) {
+            
+        } catch (\Exception $e) {
             $settings['enabled'] = false;
             $this->error("That did not work " . $e);
         }
@@ -181,7 +183,6 @@ class TfaWebAuthn extends Tfa implements Module, ConfigurableModule
         $authreg = unserialize($settings['regkeys']);
         $ids = array();
         $this->session->authreg = $authreg;
-
  
         $ids = array();
         if (is_array($authreg)) {
@@ -191,10 +192,9 @@ class TfaWebAuthn extends Tfa implements Module, ConfigurableModule
             }
         }
         if (count($ids) === 0) {
-            throw new Exception('no WebAuthn registrations for userId ' . $user->id);
+            throw new \Exception('No WebAuthn registrations for userId ' . $user->id);
         }
 
-        
        /*
          * Check if the authreq is null. if so make a new challenge
          * ProcessWire annoingly calls builtAuthCodeForm twice. once to build the form and a 2nd time when the user submits the form
@@ -205,8 +205,6 @@ class TfaWebAuthn extends Tfa implements Module, ConfigurableModule
             $this->session->authreq = json_encode($req);
             $this->session->authchallange = (string) $this->WebAuthn->getChallenge();
         }
-        
-        
         
         $form = $this->modules->get('InputfieldForm');
         $form->attr('action', "./?$this->keyName=" . $this->getSessionKey(true))
