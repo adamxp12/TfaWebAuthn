@@ -62,6 +62,7 @@ class TfaWebAuthn extends Tfa implements Module, ConfigurableModule
 
         $authreg = $this->session->authreg;
         $this->session->authreq = null;
+        $this->session->authreg = null;
 
         $code = json_decode($code);
 
