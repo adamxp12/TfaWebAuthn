@@ -93,7 +93,7 @@ class TfaWebAuthn extends Tfa implements Module, ConfigurableModule
             // process the get request. throws WebAuthnException if it fails
             $this->WebAuthn->processGet($clientDataJSON, $authenticatorData, $signature, $credentialPublicKey, $challenge, null, $this->userVerification === 'required');
             return true;
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return false;
         }
 
@@ -159,7 +159,7 @@ class TfaWebAuthn extends Tfa implements Module, ConfigurableModule
                 $this->message("Something went wrong! No credentials submitted!");
             }
             
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             $settings['enabled'] = false;
             $this->error("That did not work " . $e);
         }
@@ -195,7 +195,7 @@ class TfaWebAuthn extends Tfa implements Module, ConfigurableModule
             }
         }
         if (count($ids) === 0) {
-            throw new Exception('no WebAuthn registrations for userId ' . $user->id);
+            throw new \Exception('No WebAuthn registrations for userId ' . $user->id);
         }
 
         
