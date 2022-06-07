@@ -2,7 +2,7 @@
 namespace ProcessWire;
 
 /**
- * TfaWebAuthn (1.0.0)
+ * TfaWebAuthn (1.0.1)
  * Adds WebAuthn/FIDO2 as a TFA option
  *
  * @author Adam Blunt
@@ -40,6 +40,14 @@ class TfaWebAuthn extends Tfa implements Module, ConfigurableModule
         }
         $this->addHookBefore('Tfa::getUserSettingsInputfields', $this, 'addScripts');
         $this->addHookBefore('Tfa::render', $this, 'addScripts');
+        
+        //uses "legacy" option by design
+        $this->config->js('tfa_webauthn', [
+            'browser_not_supported' => $this->_("Browser does not support WebAuthn."),
+            'credential_added' => $this->_("Credential added. You can add more now or save this page to finish setup"),
+            'credential_added_mult' => $this->_("Credential %count% added. You can add even more or save this page to finish setup"),
+            'auth_failed' => $this->_("Authentication failed with error")
+        ]);
     }
     
 
@@ -86,7 +94,7 @@ class TfaWebAuthn extends Tfa implements Module, ConfigurableModule
 
         try {
             if ($credentialPublicKey === null) {
-                exit('Public Key for credential ID not found!');
+                exit($this->_('Public Key for credential ID not found!'));
             }
             // process the get request. throws WebAuthnException if it fails
             $this->WebAuthn->processGet($clientDataJSON, $authenticatorData, $signature, $credentialPublicKey, $challenge, null, $this->userVerification === 'required');
@@ -118,13 +126,13 @@ class TfaWebAuthn extends Tfa implements Module, ConfigurableModule
                 ->attr('id', 'TfaWebAuthn_regdata')
                 ->attr('maxlength', 20480);  
 
-            $fieldset->new('button', 'addKey', 'Enable two-factor authentication')
+            $fieldset->new('button', 'addKey', $this->_('Enable two-factor authentication'))
                 ->attr('id', 'TfaWebAuthn_button')
                 ->attr('onclick', "TfaWebAuthn_addkey()")
-                ->value("Add WebAuthn Credential");
+                ->value($this->_("Add WebAuthn Credential"));
 
             $fieldset->new('markup')
-                ->attr('value', "<span id='TfaWebAuthn_msg'>Click the button to register a new credential.</span>");
+                ->attr('value', "<span id='TfaWebAuthn_msg'>" . $this->_("Click the button to register a new credential.") . "</span>");
                 $_SESSION["chal"] = (string) $this->WebAuthn->getChallenge();
         }
     }
@@ -151,15 +159,15 @@ class TfaWebAuthn extends Tfa implements Module, ConfigurableModule
                 $settings['enabled'] = true;
                 $settings['challenge'] = null;
                 $settings['regdata'] = null;
-                $this->message("Success! Your account is now secured with two-factor authentication");
+                $this->message($this->_("Success! Your account is now secured with two-factor authentication"));
             }else{
                 $settings['enabled'] = false;
-                $this->message("Something went wrong! No credentials submitted!");
+                $this->message($this->_("Something went wrong! No credentials submitted!"));
             }
             
         } catch (\Exception $e) {
             $settings['enabled'] = false;
-            $this->error("That did not work " . $e);
+            $this->error(sprintf($this->_("That did not work: %s"), $e));
         }
 
         return $settings;
@@ -192,7 +200,7 @@ class TfaWebAuthn extends Tfa implements Module, ConfigurableModule
             }
         }
         if (count($ids) === 0) {
-            throw new \Exception('No WebAuthn registrations for userId ' . $user->id);
+            throw new \Exception(sprintf($this->_('No WebAuthn registrations for userId %d'), $user->id));
         }
 
        /*
@@ -206,24 +214,29 @@ class TfaWebAuthn extends Tfa implements Module, ConfigurableModule
             $this->session->authchallange = (string) $this->WebAuthn->getChallenge();
         }
         
+        $authStatement = $this->_("You need to use your security key to login.");
+        $authDescription = $this->_("Insert it now and tap/click the key to verify its you. If your key does not have a button just unplug it and then plug it back in.");
+        $authStartText = $this->_("Start two-factor authentication");
+        $authUseKeyText = $this->_("Use Security Key");
+
         $form = $this->modules->get('InputfieldForm');
         $form->attr('action', "./?$this->keyName=" . $this->getSessionKey(true))
-             ->attr('id', "tfaform");
+            ->attr('id', "tfaform");
         $form->new('markup')
-                ->attr('value', "<img style='height:80px' onload='TfaWebAuthn_authKey()' src='" . $this->wire('config')->urls->$this . "assets\bluekeyside.png'><br>
-                 You need to use your security key to login.<br>
-                 Insert it now and tap/click the key to verify its you. If your key does not have a button just unplug it and then plug it back in.<br>
+            ->attr('value', "<img style='height:80px' onload='TfaWebAuthn_authKey()' src='" . $this->wire('config')->urls->$this . "assets\bluekeyside.png'><br>
+                 $authStatement<br>
+                 $authDescription<br>
                  <div uk-alert class='uk-alert-danger' style='display:none' id='TfaWebAuthn_error'></div>");
         $form->new('hidden', 'authreq')
-                ->attr('id', 'TfaWebAuthn_authreq')
-                ->attr('value', $this->session->authreq);
+            ->attr('id', 'TfaWebAuthn_authreq')
+            ->attr('value', $this->session->authreq);
         $form->new('hidden', 'tfa_code')
-                ->attr('id', 'TfaWebAuthn_authresponse')
-                ->attr('required', 'required');
-        $form->new('button', 'authKey', 'Start two-factor authentication')
-                ->attr('id', 'TfaWebAuthn_button')
-                ->attr('onclick', "TfaWebAuthn_authKey()")
-                ->value("Use Security Key");
+            ->attr('id', 'TfaWebAuthn_authresponse')
+            ->attr('required', 'required');
+        $form->new('button', 'authKey', $authStartText)
+            ->attr('id', 'TfaWebAuthn_button')
+            ->attr('onclick', "TfaWebAuthn_authKey()")
+            ->value($authUseKeyText);
         return $form;
     }
 }
