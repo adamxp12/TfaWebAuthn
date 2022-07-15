@@ -105,11 +105,7 @@ class WebAuthn {
      * @param string $userName
      * @param string $userDisplayName
      * @param int $timeout timeout in seconds
-     * @param bool|string $requireResidentKey      'required', if the key should be stored by the authentication device
-     *                                             Valid values:
-     *                                             true = required
-     *                                             false = preferred
-     *                                             string 'required' 'preferred' 'discouraged'
+     * @param bool $requireResidentKey true, if the key should be stored by the authentication device
      * @param bool|string $requireUserVerification indicates that you require user verification and will fail the operation
      *                                             if the response does not have the UV flag set.
      *                                             Valid values:
@@ -143,12 +139,8 @@ class WebAuthn {
 
         $args->publicKey->authenticatorSelection = new \stdClass();
         $args->publicKey->authenticatorSelection->userVerification = $requireUserVerification;
-        if (\is_bool($requireResidentKey) && $requireResidentKey) {
+        if ($requireResidentKey) {
             $args->publicKey->authenticatorSelection->requireResidentKey = true;
-        } else if (\is_string($requireResidentKey) && \in_array(\strtolower($requireResidentKey), ['required', 'preferred', 'discouraged'])) {
-            $requireResidentKey = \strtolower($requireResidentKey);
-            $args->publicKey->authenticatorSelection->residentKey = $requireResidentKey;
-            $args->publicKey->authenticatorSelection->requireResidentKey = $requireResidentKey === 'required';
         }
         if (is_bool($crossPlatformAttachment)) {
             $args->publicKey->authenticatorSelection->authenticatorAttachment = $crossPlatformAttachment ? 'cross-platform' : 'platform';
@@ -222,7 +214,6 @@ class WebAuthn {
      * @return \stdClass
      */
     public function getGetArgs($credentialIds=array(), $timeout=20, $allowUsb=true, $allowNfc=true, $allowBle=true, $allowInternal=true, $requireUserVerification=false) {
-
         // validate User Verification Requirement
         if (\is_bool($requireUserVerification)) {
             $requireUserVerification = $requireUserVerification ? 'required' : 'preferred';
@@ -244,7 +235,7 @@ class WebAuthn {
             
             foreach ($credentialIds as $id) {
                 $tmp = new \stdClass();
-                $tmp->id = $id instanceof ByteBuffer ? $id : new ByteBuffer($id);  // binary
+                $tmp->id = $id instanceof ByteBuffer ? $id : new ByteBuffer(hex2bin($id));  // binary
                 $tmp->transports = array();
 
                 if ($allowUsb) {
@@ -308,7 +299,7 @@ class WebAuthn {
         }
 
         // 4. Verify that the value of C.challenge matches the challenge that was sent to the authenticator in the create() call.
-        if (!\property_exists($clientData, 'challenge') || ByteBuffer::fromBase64Url($clientData->challenge)->getBinaryString() !== $challenge->getBinaryString()) {
+        if (!\property_exists($clientData, 'challenge') || ByteBuffer::fromBase64Url($clientData->challenge)->getHex() !== $challenge->getBinaryString()) {
             throw new WebAuthnException('invalid challenge', WebAuthnException::INVALID_CHALLENGE);
         }
 
@@ -357,14 +348,14 @@ class WebAuthn {
         $data = new \stdClass();
         $data->rpId = $this->_rpId;
         $data->attestationFormat = $attestationObject->getAttestationFormatName();
-        $data->credentialId = $attestationObject->getAuthenticatorData()->getCredentialId();
+        $data->credentialId = bin2hex($attestationObject->getAuthenticatorData()->getCredentialId());
         $data->credentialPublicKey = $attestationObject->getAuthenticatorData()->getPublicKeyPem();
         $data->certificateChain = $attestationObject->getCertificateChain();
         $data->certificate = $attestationObject->getCertificatePem();
         $data->certificateIssuer = $attestationObject->getCertificateIssuer();
         $data->certificateSubject = $attestationObject->getCertificateSubject();
         $data->signatureCounter = $this->_signatureCounter;
-        $data->AAGUID = $attestationObject->getAuthenticatorData()->getAAGUID();
+        $data->AAGUID = bin2hex($attestationObject->getAuthenticatorData()->getAAGUID());
         $data->rootValid = $rootValid;
         $data->userPresent = $userPresent;
         $data->userVerified = $userVerified;
@@ -417,7 +408,10 @@ class WebAuthn {
 
         // 8. Verify that the value of C.challenge matches the challenge that was sent to the
         //    authenticator in the PublicKeyCredentialRequestOptions passed to the get() call.
-        if (!\property_exists($clientData, 'challenge') || ByteBuffer::fromBase64Url($clientData->challenge)->getBinaryString() !== $challenge->getBinaryString()) {
+        if (!\property_exists($clientData, 'challenge') || ByteBuffer::fromBase64Url($clientData->challenge)->getHex() !== $challenge->getBinaryString()) {
+            echo(ByteBuffer::fromBase64Url($clientData->challenge)->getHex());
+            echo("<br>");
+            exit($challenge->getBinaryString());
             throw new WebAuthnException('invalid challenge', WebAuthnException::INVALID_CHALLENGE);
         }
 
@@ -459,20 +453,14 @@ class WebAuthn {
             throw new WebAuthnException('invalid signature', WebAuthnException::INVALID_SIGNATURE);
         }
 
+        // 17. If the signature counter value authData.signCount is nonzero,
+        //     if less than or equal to the signature counter value stored,
+        //     is a signal that the authenticator may be cloned
         $signatureCounter = $authenticatorObj->getSignCount();
-        if ($signatureCounter !== 0) {
+        if ($signatureCounter > 0) {
             $this->_signatureCounter = $signatureCounter;
-        }
-
-        // 17. If either of the signature counter value authData.signCount or
-        //     previous signature count is nonzero, and if authData.signCount
-        //     less than or equal to previous signature count, it's a signal
-        //     that the authenticator may be cloned
-        if ($prevSignatureCnt !== null) {
-            if ($signatureCounter !== 0 || $prevSignatureCnt !== 0) {
-                if ($prevSignatureCnt >= $signatureCounter) {
+            if ($prevSignatureCnt !== null && $prevSignatureCnt >= $signatureCounter) {
                 throw new WebAuthnException('signature counter not valid', WebAuthnException::SIGNATURE_COUNTER);
-                }
             }
         }
 
@@ -548,10 +536,9 @@ class WebAuthn {
                         $certContent .= \str_repeat('-', \mb_strlen($description)) . "\n";
 
                         foreach ($attestationRootCertificates as $attestationRootCertificate) {
-                            $attestationRootCertificate = \str_replace(["\n", "\r", ' '], '', \trim($attestationRootCertificate));
                             $count++;
                             $certContent .= "\n-----BEGIN CERTIFICATE-----\n";
-                            $certContent .= \chunk_split($attestationRootCertificate, 64, "\n");
+                            $certContent .= \chunk_split(\trim($attestationRootCertificate), 64, "\n");
                             $certContent .= "-----END CERTIFICATE-----\n";
                         }
 
