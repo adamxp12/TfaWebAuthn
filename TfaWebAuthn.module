@@ -215,7 +215,7 @@ class TfaWebAuthn extends Tfa implements Module, ConfigurableModule
         }
         
         $authStatement = $this->_("You need to use your security key to login.");
-        $authDescription = $this->_("Insert it now and tap/click the key to verify its you. If your key does not have a button just unplug it and then plug it back in.");
+        $authDescription = $this->_("Insert it now and tap/click the key to verify it's you. If your key does not have a button just unplug it and then plug it back in.");
         $authStartText = $this->_("Start two-factor authentication");
         $authUseKeyText = $this->_("Use Security Key");
 
