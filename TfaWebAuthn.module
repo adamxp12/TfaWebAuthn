@@ -77,7 +77,6 @@ class TfaWebAuthn extends Tfa implements Module, ConfigurableModule
         $clientDataJSON = base64_decode($code->clientDataJSON);
         $authenticatorData = base64_decode($code->authenticatorData);
         $signature = base64_decode($code->signature);
-        $userHandle = base64_decode($code->userHandle);
         $id = base64_decode($code->id);
         $challenge = $this->session->authchallange;
         $credentialPublicKey = null;
